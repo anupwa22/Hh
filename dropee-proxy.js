@@ -112,7 +112,7 @@ class DropeeAPIClient {
     }
   }
 
-  saveToken(userId, token) {
+  async saveToken(userId, token) {
     try {
       this.tokens[userId] = token;
       fs.writeFileSync(this.tokenFile, JSON.stringify(this.tokens, null, 2));
@@ -162,7 +162,7 @@ class DropeeAPIClient {
     const loginResult = await this.login(initData);
 
     if (loginResult.success) {
-      this.saveToken(userId, loginResult.token);
+      await this.saveToken(userId, loginResult.token);
       return loginResult.token;
     }
 
@@ -436,7 +436,7 @@ class DropeeAPIClient {
     const headers = {
       Authorization: `Bearer ${token}`,
     };
-    const payload = { version: 2 };
+    const payload = { version: settings.VERSION_SPIN };
 
     try {
       const response = await this.axiosRequest("post", url, payload, headers);
@@ -481,7 +481,7 @@ class DropeeAPIClient {
 
         this.log(`Spin successful! Received: ${prizeMsg}`, "success");
 
-        await new Promise((resolve) => setTimeout(resolve, 3000));
+        await new Promise((resolve) => setTimeout(resolve, 5000));
       } else {
         this.log(`Spin failed: ${spinResult.error}`, "error");
       }
@@ -637,19 +637,23 @@ class DropeeAPIClient {
     }
   }
 
+  checkCountDown(cooldownUntil) {
+    if (cooldownUntil > 0) {
+      const now = Math.floor(Date.now() / 1000);
+      const secondsLeft = cooldownUntil - now;
+      if (secondsLeft > 0) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   async purchaseUpgrade(token, upgrade) {
     const { id, cooldown, cooldownUntil } = upgrade;
     const upgradeId = id;
 
-    if (cooldown > 0 && cooldownUntil > 0) {
-      const now = Math.floor(Date.now() / 1000);
-      const secondsLeft = cooldownUntil - now;
-      if (secondsLeft > 0) {
-        const hours = Math.floor(secondsLeft / 3600);
-        const minutes = Math.floor((secondsLeft % 3600) / 60);
-        const seconds = secondsLeft % 60;
-        return { success: false, error: `This card need wait ${hours} hours ${minutes} minutes ${seconds} seconds to continue upgrade...` };
-      }
+    if (cooldown > 0 && this.checkCountDown(cooldownUntil)) {
+      return;
     }
 
     const url = `${this.baseUrl}/actions/upgrade`;
@@ -679,7 +683,13 @@ class DropeeAPIClient {
       }
 
       let upgrades = configResult.data.config.upgrades
-        .filter((upgrade) => upgrade.price <= settings.MAX_UPGRADE_PRICE && upgrade.price <= availableCoins && (!upgrade.expiresOn || upgrade.expiresOn > Math.floor(Date.now() / 1000)))
+        .filter(
+          (upgrade) =>
+            upgrade.price <= settings.MAX_UPGRADE_PRICE &&
+            !this.checkCountDown(upgrade?.cooldownUntil) &&
+            upgrade.price <= availableCoins &&
+            (!upgrade.expiresOn || upgrade.expiresOn > Math.floor(Date.now() / 1000))
+        )
         .map((upgrade) => ({
           ...upgrade,
           roi: upgrade.profitDelta / upgrade.price,
@@ -708,6 +718,9 @@ class DropeeAPIClient {
         } else {
           this.log(`Upgrade ${upgrade.name} failed: ${purchaseResult.error}`, "warning");
         }
+      }
+      if (settings.AUTO_UPGRADE_MAX) {
+        await this.handleUpgrades(token, availableCoins);
       }
     } catch (error) {
       this.log(`Error processing upgrades: ${error.message}`, "error");
@@ -739,7 +752,13 @@ class DropeeAPIClient {
       }
 
       let upgrades = configResult.data.config.upgrades
-        .filter((upgrade) => upgrade.price <= settings.MAX_UPGRADE_PRICE && upgrade.price <= availableCoins && (!upgrade.expiresOn || upgrade.expiresOn > Math.floor(Date.now() / 1000)))
+        .filter(
+          (upgrade) =>
+            upgrade.price <= settings.MAX_UPGRADE_PRICE &&
+            !this.checkCountDown(upgrade?.cooldownUntil) &&
+            upgrade.price <= availableCoins &&
+            (!upgrade.expiresOn || upgrade.expiresOn > Math.floor(Date.now() / 1000))
+        )
         .map((upgrade) => ({
           ...upgrade,
           roi: upgrade.profitDelta / upgrade.price,
@@ -1027,7 +1046,6 @@ class DropeeAPIClient {
   }
 
   async runAccount() {
-    const i = this.accountIndex;
     const initData = this.queryId;
     const userData = JSON.parse(decodeURIComponent(initData.split("user=")[1].split("&")[0]));
     const userId = userData.id;
@@ -1173,6 +1191,10 @@ async function runWorker(workerData) {
     });
   } catch (error) {
     parentPort.postMessage({ accountIndex, error: error.message });
+  } finally {
+    if (!isMainThread) {
+      parentPort.postMessage("taskComplete");
+    }
   }
 }
 
@@ -1206,29 +1228,27 @@ async function main() {
           },
         });
 
+        // start=========
         workerPromises.push(
           new Promise((resolve) => {
             worker.on("message", (message) => {
-              if (message.error) {
-                errors.push(`Tài khoản ${message.accountIndex}: ${message.error}`);
-                console.log(`Tài khoản ${message.accountIndex}: ${message.error}`.yellow);
+              if (message === "taskComplete") {
+                worker.terminate();
               }
               resolve();
             });
             worker.on("error", (error) => {
-              errors.push(`Lỗi worker cho tài khoản ${currentIndex}: ${error.message}`);
-              console.log(`Lỗi worker cho tài khoản ${currentIndex}: ${error.message}`.yellow);
+              console.log(`worker error with account ${currentIndex}: ${error.message}`);
+              worker.terminate();
               resolve();
             });
             worker.on("exit", (code) => {
-              if (code !== 0) {
-                errors.push(`Worker cho tài khoản ${currentIndex} thoát với mã: ${code}`);
-              }
+              worker.terminate();
               resolve();
             });
           })
         );
-
+        // =====end=======
         currentIndex++;
       }
 
@@ -1244,8 +1264,8 @@ async function main() {
     }
     const to = new DropeeAPIClient(null, 0, proxies[0]);
     await sleep(3);
-    console.log("Tool được phát triển bởi nhóm tele Airdrop Hunter Siêu Tốc (https://t.me/airdrophuntersieutoc)".yellow);
-    console.log(`=============Hoàn thành tất cả tài khoản=============`.magenta);
+    console.log("(https://t.me/d4rkcipherx)".yellow);
+    console.log(`=============All accounts done=============`.magenta);
     await to.countdown(settings.TIME_SLEEP * 60);
   }
 }
