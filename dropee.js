@@ -844,7 +844,7 @@ class DropeeAPIClient {
     let { watchAdForSpin, watchAdForDoublePrize, watchAdInterstitial, watchAdForDoubleOfflineProfit } = data.activities;
     let timesWatchedAds = watchAdForSpin + watchAdForDoublePrize + watchAdInterstitial;
 
-    while (timesWatchedAds < others.maxPerDay && watchAdForSpin < 10) {
+    while (timesWatchedAds < others.maxPerDay && watchAdForSpin < 20) {
       this.log(`Waiting 15 seconds for claim spin to be available ads ${timesWatchedAds}`);
       await sleep(15);
       await this.claimAds(token, "extra-spin-by-ad");
