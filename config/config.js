@@ -21,7 +21,7 @@ const settings = {
   AUTO_UPGRADE: process.env.AUTO_UPGRADE ? process.env.AUTO_UPGRADE.toLowerCase() === "true" : false,
   BONUS: process.env.BONUS ? parseInt(process.env.BONUS) : 50,
   ANSWER_DAILY: process.env.ANSWER_DAILY ? process.env.ANSWER_DAILY : null,
-  REF_ID: process.env.REF_ID ? process.env.REF_ID.trim() : "372y28fcFL5",
+  REF_ID: process.env.REF_ID ? process.env.REF_ID.trim() : "x3pmpxWLR4a",
   DELAY_BETWEEN_REQUESTS: process.env.DELAY_BETWEEN_REQUESTS && _isArray(process.env.DELAY_BETWEEN_REQUESTS) ? JSON.parse(process.env.DELAY_BETWEEN_REQUESTS) : [1, 5],
   DELAY_BETWEEN_GAME: process.env.DELAY_BETWEEN_GAME && _isArray(process.env.DELAY_BETWEEN_GAME) ? JSON.parse(process.env.DELAY_BETWEEN_GAME) : [5, 10],
   DELAY_START_BOT: process.env.DELAY_START_BOT && _isArray(process.env.DELAY_START_BOT) ? JSON.parse(process.env.DELAY_START_BOT) : [1, 15],
